@@ -1,0 +1,16 @@
+qzone_session.json
+QR.png
+data/
+backups/
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+.idea/
+qzone_v1.zip
+artifacts/
+.pytest_cache/
+.coverage
+build/
+dist/
+*.egg-info/

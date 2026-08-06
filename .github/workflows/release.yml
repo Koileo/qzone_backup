@@ -1,0 +1,88 @@
+name: build-and-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: qzone-backup-windows-x64
+            executable: ./dist/qzone-backup.exe
+          - os: macos-13
+            asset: qzone-backup-macos-x64
+            executable: ./dist/qzone-backup
+          - os: ubuntu-latest
+            asset: qzone-backup-linux-x64
+            executable: ./dist/qzone-backup
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project and packager
+        run: python -m pip install --upgrade pip pyinstaller .
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Build single-file executable
+        run: pyinstaller --clean --noconfirm --onefile --name qzone-backup main.py
+
+      - name: Smoke test executable
+        run: ${{ matrix.executable }} --version
+
+      - name: Package executable and documentation
+        shell: python
+        env:
+          ASSET_NAME: ${{ matrix.asset }}
+          EXECUTABLE: ${{ matrix.executable }}
+        run: |
+          import os
+          import zipfile
+          from pathlib import Path
+
+          release_dir = Path("release")
+          release_dir.mkdir(exist_ok=True)
+          archive = release_dir / f"{os.environ['ASSET_NAME']}.zip"
+          executable = Path(os.environ["EXECUTABLE"])
+          with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+              bundle.write(executable, executable.name)
+              bundle.write("README.md")
+              bundle.write("LICENSE")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: release/${{ matrix.asset }}.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.zip
+          generate_release_notes: true

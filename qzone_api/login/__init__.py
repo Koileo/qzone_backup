@@ -1,6 +1,7 @@
 from .qrcode import QRCodeHandler
 from .cookie_handler import CookieHandler,bkn
 from loguru import logger
+import asyncio
 
 class QzoneLogin:
     def __init__(self):
@@ -17,7 +18,10 @@ class QzoneLogin:
             if not qrsig:
                 return {"code": -1, "msg": "获取二维码失败"}
                 
-            cookies = await self.cookie_handler.get_cookies(qrsig)
+            try:
+                cookies = await asyncio.wait_for(self.cookie_handler.get_cookies(qrsig), timeout=timeout)
+            except asyncio.TimeoutError:
+                return {"code": -2, "msg": f"登录等待超过 {timeout} 秒"}
             if not cookies:
                 return {"code": -2, "msg": "登录超时或取消"}
                 

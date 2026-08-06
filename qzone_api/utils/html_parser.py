@@ -46,7 +46,7 @@ def parse_callback_data(content: str) -> Optional[Dict[str, Any]]:
         data = json.loads(json_str)
         if data.get('code') != 0:
             logger.error(f"QQ空间返回错误: {data.get('message', '未知错误')}")
-            return None
+            return data
         return data
     except json.JSONDecodeError as e:
         logger.error(f"JSON解析失败: {e}")
@@ -148,6 +148,14 @@ def parse_feeds(content) -> Optional[Dict[str, Any]]:
 def parse_feed_data(data: dict) -> dict:
     """解析指定用户获取到的说说数据，支持转发内容和多层转发解析"""
     try:
+        if not isinstance(data, dict):
+            raise TypeError("说说接口没有返回有效数据")
+        if data.get("code") not in (None, 0, "0"):
+            return {
+                "status": "error",
+                "message": str(data.get("message") or "QQ 空间接口返回错误"),
+                "data": [],
+            }
         feeds = []
         for msg in data.get('msglist', []):
             feed = {
@@ -205,12 +213,10 @@ def _extract_content_from_html(html: str) -> str:
         if not m:
             return ""
         text = m.group(1)
-        # 去掉所有标签
         text = re.sub(r"<.*?>", "", text)
         return text.strip()
     except Exception:
         return ""
-
 
 def parse_zone_data(data) -> dict:
     """
@@ -221,7 +227,6 @@ def parse_zone_data(data) -> dict:
         cur_key / uin / timestamp / content / images / repost
     """
     try:
-        # 1. 先把字符串转成 Python 对象
         if isinstance(data, str):
             parsed = demjson3.decode(data)
         else:
@@ -230,9 +235,7 @@ def parse_zone_data(data) -> dict:
         if not isinstance(parsed, dict):
             raise TypeError(f"最外层不是 dict，而是 {type(parsed)}")
 
-        # 2. 进入内层 data
         inner = parsed.get("data", {})
-        # 典型结构: { main: {...}, data: [ {...}, ... ] }
         if isinstance(inner, dict) and "data" in inner:
             raw_list = inner["data"]
         else:
@@ -244,24 +247,19 @@ def parse_zone_data(data) -> dict:
         feeds = []
 
         for msg in raw_list:
-            # ⭐ 关键：只处理真正的 dict，其它（比如 _undefined_class）直接跳过
             if not isinstance(msg, dict):
                 continue
 
-            # 过滤广告：appid == '6600'
             if msg.get("appid") == "6600":
                 continue
 
             uin = msg.get("uin", "")
             key = msg.get("key", "")
             if not uin or not key:
-                # 没有必要信息就跳过
                 continue
 
-            # PC 版真正用的 cur_key / uni_key 格式
             cur_key = f"http://user.qzone.qq.com/{uin}/mood/{key}"
             fid = key
-            # abstime 是字符串时间戳
             ts_raw = msg.get("abstime", "0") or "0"
             try:
                 ts = int(ts_raw)
@@ -277,7 +275,7 @@ def parse_zone_data(data) -> dict:
                 "timestamp": ts,
                 "key" :key,
                 "content": content,
-                "images": [],   # 如果需要，也可以再从 html 里解析 <img src=...>
+                "images": [],
                 "repost": None,
             }
             feeds.append(feed)
@@ -290,6 +288,7 @@ def parse_zone_data(data) -> dict:
 
     except Exception as e:
         logger.error(f"解析说说数据失败: {e}")
+        logger.error(data)
         return {
             "status": "error",
             "message": str(e),

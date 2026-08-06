@@ -1,0 +1,7 @@
+aiohttp>=3.9
+demjson3>=3.0.6
+loguru>=0.7
+qrcode[pil]>=7.4
+requests>=2.31
+lxml>=4.9
+# 可选终端二维码：python3 -m pip install pyzbar

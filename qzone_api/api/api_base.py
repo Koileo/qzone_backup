@@ -1,7 +1,7 @@
 import aiohttp
 import json
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from loguru import logger
 
 class ApiBase:
@@ -42,12 +42,21 @@ class ApiBase:
             logger.error(f"请求异常: {e}")
             return None
 
-    async def _make_get_request(self, url: str, params: Dict[str, Any], cookies: str) -> Optional[Dict[str, Any]]:
-        """通用GET请求方法"""
+    async def _make_get_request_with_meta(
+        self,
+        url: str,
+        params: Dict[str, Any],
+        cookies: str,
+        referer: str = "https://user.qzone.qq.com/",
+    ) -> Optional[Tuple[str, Dict[str, List[str]]]]:
+        """GET 请求并保留响应头，供相册接口读取 Set-Cookie。"""
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Cookie": cookies,
-            "Accept": "application/json, text/plain, */*"
+            "Accept": "application/json, text/plain, */*",
+            "Referer": referer,
+            "Origin": "https://user.qzone.qq.com",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
         }
         
         try:
@@ -55,10 +64,25 @@ class ApiBase:
                 async with session.get(url, params=params, headers=headers) as response:
                     if response.status == 200:
                         content = await response.text()
-                        logger.debug(f"原始响应内容: {content[:100]}")
-                        return content
+                        logger.debug(f"GET响应成功: {response.status}, {len(content)} bytes")
+                        response_headers = {
+                            key.lower(): response.headers.getall(key, [])
+                            for key in response.headers.keys()
+                        }
+                        return content, response_headers
                     logger.error(f"请求失败状态码: {response.status}")
                     return None
         except Exception as e:
             logger.error(f"请求异常: {e}")
             return None
+
+    async def _make_get_request(
+        self,
+        url: str,
+        params: Dict[str, Any],
+        cookies: str,
+        referer: str = "https://user.qzone.qq.com/",
+    ) -> Optional[str]:
+        """通用 GET 请求方法。"""
+        result = await self._make_get_request_with_meta(url, params, cookies, referer)
+        return result[0] if result else None

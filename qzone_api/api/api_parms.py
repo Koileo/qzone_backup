@@ -59,6 +59,105 @@ def get_self_zone(target_qq: int, g_tk: int,  pos: int = 0, num: int = 20) -> Di
     }
     return params
 
+
+def get_album_list(
+    target_qq: int,
+    login_qq: int,
+    g_tk: int,
+    start: int = 0,
+    count: int = 30,
+) -> Dict[str, Any]:
+    """获取指定空间的相册列表参数。"""
+    return {
+        "g_tk": g_tk,
+        "hostUin": target_qq,
+        "uin": login_qq,
+        "appid": 4,
+        "inCharset": "utf-8",
+        "outCharset": "utf-8",
+        "source": "qzone",
+        "plat": "qzone",
+        "format": "jsonp",
+        "notice": 0,
+        "filter": 1,
+        "handset": 4,
+        "pageNumModeSort": 40,
+        "pageNumModeClass": 15,
+        "mode": 2,
+        "pageStart": start,
+        "pageNum": count,
+        "needUserInfo": 1,
+        "idcNum": 4,
+        "callback": "shine_Callback",
+        "callbackFun": "shine",
+    }
+
+
+def get_album_photos(
+    target_qq: int,
+    login_qq: int,
+    album_id: str,
+    g_tk: int,
+    start: int = 0,
+    count: int = 100,
+) -> Dict[str, Any]:
+    """获取指定相册照片列表参数。"""
+    return {
+        "g_tk": g_tk,
+        "mode": 0,
+        "idcNum": 4,
+        "hostUin": target_qq,
+        "topicId": album_id,
+        "noTopic": 0,
+        "uin": login_qq,
+        "pageStart": start,
+        "pageNum": count,
+        "skipCmtCount": 0,
+        "singleurl": 1,
+        "batchId": "",
+        "notice": 0,
+        "appid": 4,
+        "inCharset": "utf-8",
+        "outCharset": "utf-8",
+        "source": "qzone",
+        "plat": "qzone",
+        "outstyle": "json",
+        "format": "jsonp",
+        "json_esc": 1,
+        "question": "",
+        "answer": "",
+        "callback": "shine_Callback",
+        "callbackFun": "shine",
+    }
+
+
+def get_video_info(
+    target_qq: int,
+    login_qq: int,
+    album_id: str,
+    sloc: str,
+    g_tk: int,
+) -> Dict[str, Any]:
+    """获取相册视频或实况图的真实媒体地址参数。"""
+    return {
+        "g_tk": g_tk,
+        "callback": "viewer_Callback",
+        "topicId": album_id,
+        "picKey": sloc,
+        "cmtOrder": 1,
+        "fupdate": 1,
+        "plat": "qzone",
+        "source": "qzone",
+        "cmtNum": 0,
+        "inCharset": "utf-8",
+        "outCharset": "utf-8",
+        "callbackFun": "viewer",
+        "uin": login_qq,
+        "hostUin": target_qq,
+        "appid": 4,
+        "isFirst": 1,
+    }
+
 def get_send_zone(target_qq:int,content:str) -> Dict[str, Any]:
     """发送说说参数解析"""
     parms = {

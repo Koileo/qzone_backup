@@ -2,8 +2,12 @@ from pathlib import Path
 from loguru import logger
 import qrcode
 from PIL import Image
-from pyzbar.pyzbar import decode
 import requests
+
+try:
+    from pyzbar.pyzbar import decode
+except ImportError:  # pyzbar 只用于在终端打印二维码内容，不影响图片登录
+    decode = None
 
 class QRCodeHandler:
     def __init__(self):
@@ -23,11 +27,14 @@ class QRCodeHandler:
             im = im.resize((350, 350))
             logger.info('登录二维码获取成功')
             
-            decoded_objects = decode(im)
-            for obj in decoded_objects:
-                qr = qrcode.QRCode()
-                qr.add_data(obj.data.decode('utf-8'))
-                qr.print_ascii(invert=True)
+            if decode is not None:
+                decoded_objects = decode(im)
+                for obj in decoded_objects:
+                    qr = qrcode.QRCode()
+                    qr.add_data(obj.data.decode('utf-8'))
+                    qr.print_ascii(invert=True)
+            else:
+                logger.info('未安装 pyzbar，跳过终端二维码内容解析；请直接扫描 QR.png')
                 
             return qrsig
             
