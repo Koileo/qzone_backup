@@ -191,9 +191,16 @@ def parse_feed_data(data: dict) -> dict:
                         'height': pic.get('height', 0)
                     })
             feeds.append(feed)
+        total_raw = data.get('total')
+        try:
+            total_available = int(total_raw)
+        except (TypeError, ValueError):
+            total_available = None
+
         return {
             'status': 'ok',
             'total': len(feeds),
+            'total_available': total_available,
             'data': feeds
         }
     except Exception as e:

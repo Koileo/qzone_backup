@@ -12,6 +12,17 @@ class ErrorParsingTests(unittest.TestCase):
         self.assertEqual(parsed["message"], "请先登录空间")
         self.assertEqual(parsed["data"], [])
 
+    def test_feed_total_is_preserved_for_pagination(self):
+        parsed = parse_feed_data(
+            {
+                "code": 0,
+                "total": 10001,
+                "msglist": [{"tid": "m1", "uin": 123, "created_time": 1, "content": "fixture"}],
+            }
+        )
+        self.assertEqual(parsed["total"], 1)
+        self.assertEqual(parsed["total_available"], 10001)
+
 
 if __name__ == "__main__":
     unittest.main()

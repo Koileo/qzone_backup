@@ -152,6 +152,7 @@ qzone-archive backup --target 123456789
 - `--output-dir DIR`：多账号备份根目录，默认 `backups`。
 - `--format all|json|html`：默认同时生成两种格式。
 - `--page-size N` / `--max-pages N`：说说分页大小和页数限制。
+- 说说抓取以接口返回的总量或空页作为结束条件；中途短页会继续翻页，不再约 90 条时提前结束。
 - `--max-albums N` / `--max-photo-pages N`：相册及单相册照片页数限制。
 - `--album NAME`：参数模式只备份指定名称相册，可重复使用。
 - `--delay SECONDS`：分页请求间隔，默认 `0.5` 秒。

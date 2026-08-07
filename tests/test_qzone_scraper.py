@@ -34,6 +34,20 @@ class FakeApi:
         return {"status": "ok", "data": pages.get(pos, [])}
 
 
+class ShortMiddlePageApi:
+    def __init__(self):
+        self.positions = []
+
+    async def get_messages_list(self, target_qq, g_tk, cookies, pos=0, num=20):
+        self.positions.append(pos)
+        pages = {
+            0: [{"cur_key": "a"}, {"cur_key": "b"}],
+            2: [{"cur_key": "c"}],
+            4: [{"cur_key": "d"}, {"cur_key": "e"}],
+        }
+        return {"status": "ok", "total_available": 5, "data": pages.get(pos, [])}
+
+
 class FakeAlbumApi:
     def __init__(self):
         self.photo_starts = []
@@ -108,11 +122,17 @@ class ScraperTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalise_qq("abc")
 
-    def test_scrape_deduplicates_and_stops_on_short_page(self):
+    def test_scrape_deduplicates_and_stops_on_empty_page(self):
         api = FakeApi()
         feeds = asyncio.run(scrape_messages(api, 123, 456, "sid=x", page_size=2, delay=0))
         self.assertEqual([item["cur_key"] for item in feeds], ["a", "b"])
-        self.assertEqual([call[3] for call in api.calls], [0, 2])
+        self.assertEqual([call[3] for call in api.calls], [0, 2, 4])
+
+    def test_scrape_continues_after_short_non_final_page(self):
+        api = ShortMiddlePageApi()
+        feeds = asyncio.run(scrape_messages(api, 123, 456, "sid=x", page_size=2, delay=0))
+        self.assertEqual([item["cur_key"] for item in feeds], ["a", "b", "c", "d", "e"])
+        self.assertEqual(api.positions, [0, 2, 4])
 
     def test_save_snapshot_is_utf8_json(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -96,7 +96,8 @@ async def scrape_messages(
     """分页抓取说说并去重。
 
     ``on_page(page, position, count)`` 在每页成功解析后调用，适合 CLI 打印进度。
-    空页、短页或连续重复页会结束抓取，避免接口异常时无限请求。
+    空页或达到服务端报告的总量会结束抓取。接口可能因置顶、权限过滤等原因
+    返回短页，因此短页不能作为末页判断依据。
     """
 
     if page_size <= 0:
@@ -149,7 +150,15 @@ async def scrape_messages(
         if on_page:
             on_page(page, position, new_count)
 
-        if not batch or len(batch) < page_size or new_count == 0:
+        total_raw = result.get("total_available")
+        try:
+            total_available = int(total_raw) if total_raw is not None else None
+        except (TypeError, ValueError):
+            total_available = None
+
+        if not batch:
+            break
+        if total_available is not None and total_available > 0 and position + page_size >= total_available:
             break
         position += page_size
         if delay:
