@@ -1,0 +1,46 @@
+diff --git a/qzone_api/api/api_base.py b/qzone_api/api/api_base.py
+index d814816..a48d232 100644
+--- a/qzone_api/api/api_base.py
++++ b/qzone_api/api/api_base.py
+@@ -92,7 +92,13 @@ class ApiBase:
+                                     f"({attempt}/{self._MAX_GET_ATTEMPTS})"
+                                 )
+                             else:
+-                                logger.error(f"请求失败状态码: {response.status}")
++                                if response.status == 501:
++                                    logger.error(
++                                        "请求失败状态码: 501。服务当前可能繁忙或限制了请求，"
++                                        "建议过一会儿再来爬取，或者更换 IP 后重试。"
++                                    )
++                                else:
++                                    logger.error(f"请求失败状态码: {response.status}")
+                                 return None
+                     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                         if attempt >= self._MAX_GET_ATTEMPTS:
+diff --git a/tests/test_api_base.py b/tests/test_api_base.py
+index a42596a..fb8948f 100644
+--- a/tests/test_api_base.py
++++ b/tests/test_api_base.py
+@@ -62,6 +62,21 @@ class ApiBaseRetryTests(unittest.IsolatedAsyncioTestCase):
+         self.assertIsNone(result)
+         self.assertEqual(session.calls, 1)
+ 
++    async def test_exhausted_501_suggests_waiting_or_changing_ip(self):
++        session = FakeSession([FakeResponse(501) for _ in range(5)])
++        sleep = AsyncMock()
++        with patch("qzone_api.api.api_base.aiohttp.ClientSession", return_value=session), patch(
++            "qzone_api.api.api_base.asyncio.sleep", sleep
++        ), patch("qzone_api.api.api_base.logger.error") as log_error:
++            result = await ApiBase()._make_get_request("https://example.test", {}, "sid=x")
++
++        self.assertIsNone(result)
++        self.assertEqual(session.calls, 5)
++        log_error.assert_called_once_with(
++            "请求失败状态码: 501。服务当前可能繁忙或限制了请求，"
++            "建议过一会儿再来爬取，或者更换 IP 后重试。"
++        )
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+

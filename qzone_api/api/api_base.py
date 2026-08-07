@@ -92,7 +92,13 @@ class ApiBase:
                                     f"({attempt}/{self._MAX_GET_ATTEMPTS})"
                                 )
                             else:
-                                logger.error(f"请求失败状态码: {response.status}")
+                                if response.status == 501:
+                                    logger.error(
+                                        "请求失败状态码: 501。服务当前可能繁忙或限制了请求，"
+                                        "建议过一会儿再来爬取，或者更换 IP 后重试。"
+                                    )
+                                else:
+                                    logger.error(f"请求失败状态码: {response.status}")
                                 return None
                     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                         if attempt >= self._MAX_GET_ATTEMPTS:

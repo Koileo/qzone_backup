@@ -62,6 +62,21 @@ class ApiBaseRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
         self.assertEqual(session.calls, 1)
 
+    async def test_exhausted_501_suggests_waiting_or_changing_ip(self):
+        session = FakeSession([FakeResponse(501) for _ in range(5)])
+        sleep = AsyncMock()
+        with patch("qzone_api.api.api_base.aiohttp.ClientSession", return_value=session), patch(
+            "qzone_api.api.api_base.asyncio.sleep", sleep
+        ), patch("qzone_api.api.api_base.logger.error") as log_error:
+            result = await ApiBase()._make_get_request("https://example.test", {}, "sid=x")
+
+        self.assertIsNone(result)
+        self.assertEqual(session.calls, 5)
+        log_error.assert_called_once_with(
+            "请求失败状态码: 501。服务当前可能繁忙或限制了请求，"
+            "建议过一会儿再来爬取，或者更换 IP 后重试。"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

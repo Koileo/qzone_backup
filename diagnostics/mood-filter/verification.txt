@@ -1,0 +1,19 @@
+Baseline behavior:
+  Interactive mood backup offered no original/repost selection.
+  CLI had no --mood-type option.
+
+Modified commands:
+  .venv/bin/python main.py self moods --help
+  .venv/bin/python -m unittest discover -s tests -v
+
+Modified literal results:
+  --mood-type {original,repost,all}
+  备份说说类型：original=自己发的，repost=转发的，all=全部（默认）
+  Ran 38 tests in 0.587s
+  OK
+  说说筛选：转发的 1 条（抓取总数 2 条）
+  QQ 999 备份完成：1 条说说，0 个相册
+
+Exit statuses:
+  help: 0
+  tests: 0

@@ -1,0 +1,23 @@
+Baseline command:
+  QzoneApi.get_messages_list(pos=1960, num=20)
+Baseline literal result:
+  HTTP 501 on attempts 1/5 through 5/5; RESULT NoneType None 0
+Baseline exit status: 0
+
+Modified command:
+  scrape_messages(checkpoint with pos=1980 skipped, max_pages=101)
+Modified literal result:
+  RESUME count=1967 pos=2000
+  HTTP 501 on attempts 1/5 through 5/5
+  RuntimeError: 第 101 页返回格式无效: NoneType
+Modified exit status: 1
+
+Control command:
+  QzoneApi.get_messages_list(pos=0, num=20)
+Control literal result:
+  HTTP 501 on attempts 1/5 through 5/5; RESULT NoneType None 0
+Control exit status: 0
+
+Conclusion:
+  Skipping pos=1980 did not change the response. A shallow request also returned 501,
+  so this run is affected by endpoint-wide rejection or temporary session/rate control.

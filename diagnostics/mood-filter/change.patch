@@ -1,0 +1,214 @@
+diff --git a/README.md b/README.md
+index 8edcf54..3d63755 100644
+--- a/README.md
++++ b/README.md
+@@ -6,7 +6,7 @@
+ 
+ - 扫码登录并复用本地 session。
+ - 抓取登录账号或其他指定 QQ 号，可一次备份多个账号。
+-- 说说分页、去重，保存文字、时间、转发内容和图片。
++- 说说分页、去重，可选择只备份自己发的、只备份转发的或备份全部。
+ - 相册列表及相册照片分页备份，优先使用原图 URL。
+ - 正确区分登录 QQ 与目标 QQ，支持备份其他可访问账号的相册。
+ - 相册列表使用服务端游标完整分页；照片和视频按拍摄时间自动归档到 `年/月` 目录。
+@@ -95,6 +95,9 @@ qzone-archive self moods
+ # 2. 备份他人的说说
+ qzone-archive user moods 123456789
+ 
++# 只备份自己发的说说（也可使用 repost 或 all）
++qzone-archive self moods --mood-type original
++
+ # 3. 备份自己的相册
+ qzone-archive self albums
+ 
+@@ -152,6 +155,7 @@ qzone-archive backup --target 123456789
+ - `--output-dir DIR`：多账号备份根目录，默认 `backups`。
+ - `--format all|json|html`：默认同时生成两种格式。
+ - `--page-size N` / `--max-pages N`：说说分页大小和页数限制。
++- `--mood-type original|repost|all`：只备份自己发的、转发的或全部说说，默认 `all`。
+ - 说说抓取以接口返回的总量或空页作为结束条件；中途短页会继续翻页，不再约 90 条时提前结束。
+ - 分页遇到 `429/500/501/502/503/504` 或临时网络异常时会在原位置自动退避重试。
+ - 每个成功的说说分页都会追加到 JSONL 检查点；任务中断后再次运行会从最后成功位置续传，完成导出后自动清理检查点。
+diff --git a/main.py b/main.py
+index 819dfec..4f7c9f1 100644
+--- a/main.py
++++ b/main.py
+@@ -13,6 +13,7 @@ from qzone_scraper import (
+     build_snapshot,
+     cookie_header,
+     download_snapshot_media,
++    filter_messages,
+     normalise_qq,
+     save_archive_html,
+     save_snapshot,
+@@ -90,6 +91,12 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
+ def _add_mood_options(parser: argparse.ArgumentParser) -> None:
+     parser.add_argument("--page-size", type=int, default=20, help="每页说说条数（默认 20）")
+     parser.add_argument("--max-pages", type=int, help="最多抓取多少页说说")
++    parser.add_argument(
++        "--mood-type",
++        choices=("original", "repost", "all"),
++        default="all",
++        help="备份说说类型：original=自己发的，repost=转发的，all=全部（默认）",
++    )
+ 
+ 
+ def _add_album_options(parser: argparse.ArgumentParser) -> None:
+@@ -268,6 +275,18 @@ def interactive_args(input_func=None, output_func=print) -> Optional[argparse.Na
+         parsed._output_func = output_func
+         return parsed
+ 
++    if content in ("moods", "all"):
++        mood_choice = _ask_choice(
++            input_func,
++            output_func,
++            "备份哪些说说？1. 自己发的  2. 转发的  3. 全部",
++            ("1", "2", "3"),
++            "3",
++        )
++        arguments.extend(
++            ["--mood-type", {"1": "original", "2": "repost", "3": "all"}[mood_choice]]
++        )
++
+     output_func("导出格式：1. JSON + HTML  2. 仅 HTML  3. 仅 JSON")
+     format_choice = _ask_choice(input_func, output_func, "请选择导出格式", ("1", "2", "3"), "1")
+     format_value = {"1": "all", "2": "html", "3": "json"}[format_choice]
+@@ -445,6 +464,11 @@ async def run(args: argparse.Namespace, *, login_func=login_with_cache, api_fact
+                     f"  已复用检查点 {count} 条，从 pos={position} 继续"
+                 ),
+             )
++            all_feed_count = len(feeds)
++            feeds = filter_messages(feeds, args.mood_type)
++            if args.mood_type != "all":
++                mood_label = "自己发的" if args.mood_type == "original" else "转发的"
++                print(f"  说说筛选：{mood_label} {len(feeds)} 条（抓取总数 {all_feed_count} 条）")
+         albums = []
+         album_error = None
+         if include_albums:
+diff --git a/qzone_scraper.py b/qzone_scraper.py
+index 12fbe48..8912a27 100644
+--- a/qzone_scraper.py
++++ b/qzone_scraper.py
+@@ -81,6 +81,17 @@ def _feed_key(feed: Dict[str, Any]) -> str:
+     return json.dumps(feed, ensure_ascii=False, sort_keys=True)
+ 
+ 
++def filter_messages(feeds: List[Dict[str, Any]], mood_type: str = "all") -> List[Dict[str, Any]]:
++    """按原创/转发筛选说说，保留原有顺序。"""
++
++    if mood_type not in {"all", "original", "repost"}:
++        raise ValueError("mood_type 必须是 all、original 或 repost")
++    if mood_type == "all":
++        return list(feeds)
++    wants_repost = mood_type == "repost"
++    return [feed for feed in feeds if bool(feed.get("repost")) == wants_repost]
++
++
+ def _load_message_checkpoint(
+     path: Path,
+     target_qq: int,
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index 0580ff2..0396548 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -31,6 +31,23 @@ class FakeCliApi:
+         return {"status": "ok", "total": 0, "data": []}
+ 
+ 
++class FakeFilteredCliApi(FakeCliApi):
++    async def get_messages_list(self, target_qq, g_tk, cookies, pos=0, num=20):
++        self.message_targets.append(target_qq)
++        return {
++            "status": "ok",
++            "total_available": 2,
++            "data": [
++                {"cur_key": "original", "content": "自己发的", "repost": None},
++                {
++                    "cur_key": "repost",
++                    "content": "转发语",
++                    "repost": {"content": "原说说"},
++                },
++            ],
++        }
++
++
+ async def fake_login(_path):
+     return {"qq": "o999", "bkn": 123, "cookies": {"skey": "fixture"}}
+ 
+@@ -73,6 +90,30 @@ class CliMatrixTests(unittest.TestCase):
+         self.assertEqual(api.album_targets, [])
+         self.assertEqual(saved["target_qq"], "123")
+ 
++    def test_mood_type_filters_exported_messages(self):
++        with tempfile.TemporaryDirectory() as directory:
++            args = build_parser().parse_args(
++                [
++                    "self",
++                    "moods",
++                    "--mood-type",
++                    "repost",
++                    "--output-dir",
++                    directory,
++                    "--format",
++                    "json",
++                    "--no-media",
++                    "--delay",
++                    "0",
++                ]
++            )
++            destinations = asyncio.run(
++                run(args, login_func=fake_login, api_factory=FakeFilteredCliApi)
++            )
++            saved = json.loads(destinations[0].read_text(encoding="utf-8"))
++            self.assertEqual(saved["total"], 1)
++            self.assertEqual(saved["data"][0]["cur_key"], "repost")
++
+     def test_self_albums_only_calls_album_api(self):
+         api, saved = self._run_command(["self", "albums"], "999/albums")
+         self.assertEqual(api.message_targets, [])
+@@ -155,7 +196,7 @@ class InteractiveMenuTests(unittest.TestCase):
+     def test_user_moods_wizard_collects_target_and_options(self):
+         messages = []
+         args = interactive_args(
+-            input_func=self._inputs(["2", "123 456", "", "2", "2", "3"]),
++            input_func=self._inputs(["2", "123 456", "", "1", "2", "2", "3"]),
+             output_func=messages.append,
+         )
+         self.assertEqual(args.scope, "user")
+@@ -165,6 +206,7 @@ class InteractiveMenuTests(unittest.TestCase):
+         self.assertEqual(args.format, "html")
+         self.assertTrue(args.no_media)
+         self.assertEqual(args.max_pages, 3)
++        self.assertEqual(args.mood_type, "original")
+ 
+     def test_self_albums_wizard_selects_albums_and_exports_html(self):
+         args = interactive_args(
+diff --git a/tests/test_qzone_scraper.py b/tests/test_qzone_scraper.py
+index 8397751..b9708d4 100644
+--- a/tests/test_qzone_scraper.py
++++ b/tests/test_qzone_scraper.py
+@@ -12,6 +12,7 @@ from pathlib import Path
+ from qzone_scraper import (
+     build_snapshot,
+     download_snapshot_media,
++    filter_messages,
+     normalise_qq,
+     render_archive_html,
+     save_archive_html,
+@@ -150,6 +151,15 @@ class ScraperTests(unittest.TestCase):
+         self.assertEqual([item["cur_key"] for item in feeds], ["a", "b", "c", "d", "e"])
+         self.assertEqual(api.positions, [0, 2, 4])
+ 
++    def test_filter_messages_selects_original_repost_or_all(self):
++        feeds = [
++            {"cur_key": "original", "repost": None},
++            {"cur_key": "repost", "repost": {"content": "原说说"}},
++        ]
++        self.assertEqual([item["cur_key"] for item in filter_messages(feeds, "original")], ["original"])
++        self.assertEqual([item["cur_key"] for item in filter_messages(feeds, "repost")], ["repost"])
++        self.assertEqual(filter_messages(feeds, "all"), feeds)
++
+     def test_scrape_resumes_from_last_successful_page_checkpoint(self):
+         with tempfile.TemporaryDirectory() as directory:
+             checkpoint = Path(directory) / "moods.checkpoint.jsonl"
+

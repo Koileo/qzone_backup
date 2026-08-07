@@ -1,0 +1,4 @@
+--- archive.moods.checkpoint.before-skip-1980.jsonl
++++ archive.moods.checkpoint.skip-1980.jsonl
+@@ -100,0 +101 @@
++{"type":"page","pos":1980,"next_pos":2000,"complete":false,"data":[],"skip_reason":"HTTP 501 after 5 attempts on 2026-08-07"}
