@@ -131,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="qzone-archive",
         description="多功能 QQ 空间 CLI：分别备份自己/他人的说说与相册",
     )
-    parser.add_argument("--version", action="version", version="%(prog)s 0.5.4")
+    parser.add_argument("--version", action="version", version="%(prog)s 0.5.5")
     commands = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
 
     commands.add_parser("menu", help="打开交互式选择菜单")
@@ -222,7 +222,7 @@ def interactive_args(input_func=None, output_func=print) -> Optional[argparse.Na
 
     input_func = input if input_func is None else input_func
     output_func("\n" + "=" * 54)
-    output_func(" Qzone Archive 0.5.4 · QQ 空间本地备份")
+    output_func(" Qzone Archive 0.5.5 · QQ 空间本地备份")
     output_func("=" * 54)
     output_func("  1. 备份自己的说说")
     output_func("  2. 备份别人的说说")
