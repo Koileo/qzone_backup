@@ -81,6 +81,118 @@ def _feed_key(feed: Dict[str, Any]) -> str:
     return json.dumps(feed, ensure_ascii=False, sort_keys=True)
 
 
+def _load_message_checkpoint(
+    path: Path,
+    target_qq: int,
+    page_size: int,
+    start_pos: int,
+) -> Tuple[List[Dict[str, Any]], int, int, bool]:
+    """读取逐页 JSONL 检查点，并丢弃崩溃留下的不完整末行。"""
+
+    if not path.exists():
+        return [], start_pos, 0, False
+
+    feeds: List[Dict[str, Any]] = []
+    seen = set()
+    next_pos = start_pos
+    completed_pages = 0
+    complete = False
+    valid_end = 0
+    file_size = path.stat().st_size
+
+    with path.open("rb") as handle:
+        for line_number, raw_line in enumerate(handle, 1):
+            end_offset = handle.tell()
+            if not raw_line.strip():
+                valid_end = end_offset
+                continue
+            try:
+                record = json.loads(raw_line.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                if end_offset == file_size:
+                    break
+                raise RuntimeError(f"说说检查点第 {line_number} 行损坏: {exc}") from exc
+
+            if line_number == 1:
+                expected = {
+                    "type": "qzone-moods-checkpoint",
+                    "version": 1,
+                    "target_qq": str(target_qq),
+                    "page_size": page_size,
+                    "start_pos": start_pos,
+                }
+                if any(record.get(key) != value for key, value in expected.items()):
+                    raise RuntimeError("说说检查点与当前目标、分页大小或版本不匹配")
+            else:
+                if record.get("type") != "page" or int(record.get("pos", -1)) != next_pos:
+                    raise RuntimeError(f"说说检查点第 {line_number} 行分页位置不连续")
+                items = record.get("data") or []
+                if not isinstance(items, list):
+                    raise RuntimeError(f"说说检查点第 {line_number} 行 data 不是列表")
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    key = _feed_key(item)
+                    if key not in seen:
+                        seen.add(key)
+                        feeds.append(item)
+                next_pos = int(record.get("next_pos", next_pos))
+                completed_pages += 1
+                complete = bool(record.get("complete", False))
+            valid_end = end_offset
+
+    if valid_end < file_size:
+        with path.open("r+b") as handle:
+            handle.truncate(valid_end)
+    return feeds, next_pos, completed_pages, complete
+
+
+def _initialise_message_checkpoint(
+    path: Path,
+    target_qq: int,
+    page_size: int,
+    start_pos: int,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = {
+        "type": "qzone-moods-checkpoint",
+        "version": 1,
+        "target_qq": str(target_qq),
+        "page_size": page_size,
+        "start_pos": start_pos,
+    }
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(header, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _append_message_checkpoint(
+    path: Path,
+    position: int,
+    next_pos: int,
+    data: List[Dict[str, Any]],
+    complete: bool,
+) -> None:
+    record = {
+        "type": "page",
+        "pos": position,
+        "next_pos": next_pos,
+        "complete": complete,
+        "data": data,
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
 async def scrape_messages(
     api: MessageApi,
     target_qq: int,
@@ -92,6 +204,8 @@ async def scrape_messages(
     max_pages: Optional[int] = None,
     delay: float = 0.5,
     on_page: Optional[Callable[[int, int, int], None]] = None,
+    checkpoint_path: Optional[Union[os.PathLike, str]] = None,
+    on_resume: Optional[Callable[[int, int], None]] = None,
 ) -> List[Dict[str, Any]]:
     """分页抓取说说并去重。
 
@@ -113,10 +227,22 @@ async def scrape_messages(
     if delay:
         import asyncio
 
-    position = start_pos
-    page = 0
-    feeds: List[Dict[str, Any]] = []
-    seen = set()
+    checkpoint = Path(checkpoint_path).expanduser() if checkpoint_path is not None else None
+    if checkpoint is not None and checkpoint.exists():
+        feeds, position, page, checkpoint_complete = _load_message_checkpoint(
+            checkpoint, target_qq, page_size, start_pos
+        )
+        if on_resume:
+            on_resume(len(feeds), position)
+        if checkpoint_complete:
+            return feeds
+    else:
+        position = start_pos
+        page = 0
+        feeds = []
+        if checkpoint is not None:
+            _initialise_message_checkpoint(checkpoint, target_qq, page_size, start_pos)
+    seen = {_feed_key(item) for item in feeds}
 
     while max_pages is None or page < max_pages:
         result = await api.get_messages_list(
@@ -147,20 +273,33 @@ async def scrape_messages(
             feeds.append(item)
             new_count += 1
 
-        if on_page:
-            on_page(page, position, new_count)
-
         total_raw = result.get("total_available")
         try:
             total_available = int(total_raw) if total_raw is not None else None
         except (TypeError, ValueError):
             total_available = None
 
-        if not batch:
+        complete = not batch or (
+            total_available is not None
+            and total_available > 0
+            and position + page_size >= total_available
+        )
+        next_position = position + page_size
+        if checkpoint is not None:
+            _append_message_checkpoint(
+                checkpoint,
+                position,
+                next_position,
+                feeds[-new_count:] if new_count else [],
+                complete,
+            )
+
+        if on_page:
+            on_page(page, position, new_count)
+
+        if complete:
             break
-        if total_available is not None and total_available > 0 and position + page_size >= total_available:
-            break
-        position += page_size
+        position = next_position
         if delay:
             await asyncio.sleep(delay)
 

@@ -48,6 +48,22 @@ class ShortMiddlePageApi:
         return {"status": "ok", "total_available": 5, "data": pages.get(pos, [])}
 
 
+class InterruptedMessageApi:
+    def __init__(self, fail_at=None):
+        self.fail_at = fail_at
+        self.positions = []
+
+    async def get_messages_list(self, target_qq, g_tk, cookies, pos=0, num=20):
+        self.positions.append(pos)
+        if pos == self.fail_at:
+            raise RuntimeError("fixture interruption")
+        pages = {
+            0: [{"cur_key": "a"}, {"cur_key": "b"}],
+            2: [{"cur_key": "c"}, {"cur_key": "d"}],
+        }
+        return {"status": "ok", "total_available": 4, "data": pages.get(pos, [])}
+
+
 class FakeAlbumApi:
     def __init__(self):
         self.photo_starts = []
@@ -133,6 +149,42 @@ class ScraperTests(unittest.TestCase):
         feeds = asyncio.run(scrape_messages(api, 123, 456, "sid=x", page_size=2, delay=0))
         self.assertEqual([item["cur_key"] for item in feeds], ["a", "b", "c", "d", "e"])
         self.assertEqual(api.positions, [0, 2, 4])
+
+    def test_scrape_resumes_from_last_successful_page_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "moods.checkpoint.jsonl"
+            interrupted = InterruptedMessageApi(fail_at=2)
+            with self.assertRaisesRegex(RuntimeError, "fixture interruption"):
+                asyncio.run(
+                    scrape_messages(
+                        interrupted,
+                        123,
+                        456,
+                        "sid=x",
+                        page_size=2,
+                        delay=0,
+                        checkpoint_path=checkpoint,
+                    )
+                )
+
+            resumed_positions = []
+            resumed = InterruptedMessageApi()
+            feeds = asyncio.run(
+                scrape_messages(
+                    resumed,
+                    123,
+                    456,
+                    "sid=x",
+                    page_size=2,
+                    delay=0,
+                    checkpoint_path=checkpoint,
+                    on_resume=lambda count, pos: resumed_positions.append((count, pos)),
+                )
+            )
+
+            self.assertEqual(resumed_positions, [(2, 2)])
+            self.assertEqual(resumed.positions, [2])
+            self.assertEqual([item["cur_key"] for item in feeds], ["a", "b", "c", "d"])
 
     def test_save_snapshot_is_utf8_json(self):
         with tempfile.TemporaryDirectory() as directory:

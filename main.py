@@ -124,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="qzone-archive",
         description="多功能 QQ 空间 CLI：分别备份自己/他人的说说与相册",
     )
-    parser.add_argument("--version", action="version", version="%(prog)s 0.5.3")
+    parser.add_argument("--version", action="version", version="%(prog)s 0.5.4")
     commands = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
 
     commands.add_parser("menu", help="打开交互式选择菜单")
@@ -215,7 +215,7 @@ def interactive_args(input_func=None, output_func=print) -> Optional[argparse.Na
 
     input_func = input if input_func is None else input_func
     output_func("\n" + "=" * 54)
-    output_func(" Qzone Archive 0.5.3 · QQ 空间本地备份")
+    output_func(" Qzone Archive 0.5.4 · QQ 空间本地备份")
     output_func("=" * 54)
     output_func("  1. 备份自己的说说")
     output_func("  2. 备份别人的说说")
@@ -415,6 +415,17 @@ async def run(args: argparse.Namespace, *, login_func=login_with_cache, api_fact
     for target_qq in targets:
         print(f"\n开始备份 QQ {target_qq}：{args.content}")
 
+        if args.output:
+            json_path = args.output
+            html_path = args.output.with_suffix(".html")
+            media_dir = args.output.parent / f"{args.output.stem}_media"
+        else:
+            target_dir = args.output_dir / str(target_qq) / args.content
+            json_path = target_dir / "archive.json"
+            html_path = target_dir / "index.html"
+            media_dir = target_dir / "media"
+        mood_checkpoint = json_path.with_name(f"{json_path.stem}.moods.checkpoint.jsonl")
+
         def progress(page: int, position: int, count: int) -> None:
             print(f"  说说第 {page} 页（pos={position}）新增 {count} 条")
 
@@ -429,6 +440,10 @@ async def run(args: argparse.Namespace, *, login_func=login_with_cache, api_fact
                 max_pages=args.max_pages,
                 delay=args.delay,
                 on_page=progress,
+                checkpoint_path=mood_checkpoint,
+                on_resume=lambda count, position: print(
+                    f"  已复用检查点 {count} 条，从 pos={position} 继续"
+                ),
             )
         albums = []
         album_error = None
@@ -469,16 +484,6 @@ async def run(args: argparse.Namespace, *, login_func=login_with_cache, api_fact
         if album_error:
             snapshot["album_error"] = album_error
 
-        if args.output:
-            json_path = args.output
-            html_path = args.output.with_suffix(".html")
-            media_dir = args.output.parent / f"{args.output.stem}_media"
-        else:
-            target_dir = args.output_dir / str(target_qq) / args.content
-            json_path = target_dir / "archive.json"
-            html_path = target_dir / "index.html"
-            media_dir = target_dir / "media"
-
         if not args.no_media:
             media_cookie_builder = getattr(api, "album_media_cookies", None)
             media_cookies = media_cookie_builder(cookies) if media_cookie_builder else cookies
@@ -499,6 +504,8 @@ async def run(args: argparse.Namespace, *, login_func=login_with_cache, api_fact
             destinations.append(save_snapshot(snapshot, json_path))
         if args.format in ("all", "html"):
             destinations.append(save_archive_html(snapshot, html_path))
+        if include_moods and mood_checkpoint.exists():
+            mood_checkpoint.unlink()
         print(f"QQ {target_qq} 备份完成：{len(feeds)} 条说说，{len(albums)} 个相册")
         for destination in destinations[-2:]:
             if destination in (json_path, html_path):
