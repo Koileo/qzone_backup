@@ -23,7 +23,7 @@ jobs:
           - os: windows-latest
             asset: qzone-backup-windows-x64
             executable: ./dist/qzone-backup.exe
-          - os: macos-13
+          - os: macos-15-intel
             asset: qzone-backup-macos-x64
             executable: ./dist/qzone-backup
           - os: ubuntu-latest
