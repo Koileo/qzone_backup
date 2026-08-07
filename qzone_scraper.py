@@ -81,6 +81,17 @@ def _feed_key(feed: Dict[str, Any]) -> str:
     return json.dumps(feed, ensure_ascii=False, sort_keys=True)
 
 
+def filter_messages(feeds: List[Dict[str, Any]], mood_type: str = "all") -> List[Dict[str, Any]]:
+    """按原创/转发筛选说说，保留原有顺序。"""
+
+    if mood_type not in {"all", "original", "repost"}:
+        raise ValueError("mood_type 必须是 all、original 或 repost")
+    if mood_type == "all":
+        return list(feeds)
+    wants_repost = mood_type == "repost"
+    return [feed for feed in feeds if bool(feed.get("repost")) == wants_repost]
+
+
 def _load_message_checkpoint(
     path: Path,
     target_qq: int,

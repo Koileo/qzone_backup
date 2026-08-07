@@ -6,7 +6,7 @@
 
 - 扫码登录并复用本地 session。
 - 抓取登录账号或其他指定 QQ 号，可一次备份多个账号。
-- 说说分页、去重，保存文字、时间、转发内容和图片。
+- 说说分页、去重，可选择只备份自己发的、只备份转发的或备份全部。
 - 相册列表及相册照片分页备份，优先使用原图 URL。
 - 正确区分登录 QQ 与目标 QQ，支持备份其他可访问账号的相册。
 - 相册列表使用服务端游标完整分页；照片和视频按拍摄时间自动归档到 `年/月` 目录。
@@ -95,6 +95,9 @@ qzone-archive self moods
 # 2. 备份他人的说说
 qzone-archive user moods 123456789
 
+# 只备份自己发的说说（也可使用 repost 或 all）
+qzone-archive self moods --mood-type original
+
 # 3. 备份自己的相册
 qzone-archive self albums
 
@@ -152,6 +155,7 @@ qzone-archive backup --target 123456789
 - `--output-dir DIR`：多账号备份根目录，默认 `backups`。
 - `--format all|json|html`：默认同时生成两种格式。
 - `--page-size N` / `--max-pages N`：说说分页大小和页数限制。
+- `--mood-type original|repost|all`：只备份自己发的、转发的或全部说说，默认 `all`。
 - 说说抓取以接口返回的总量或空页作为结束条件；中途短页会继续翻页，不再约 90 条时提前结束。
 - 分页遇到 `429/500/501/502/503/504` 或临时网络异常时会在原位置自动退避重试。
 - 每个成功的说说分页都会追加到 JSONL 检查点；任务中断后再次运行会从最后成功位置续传，完成导出后自动清理检查点。

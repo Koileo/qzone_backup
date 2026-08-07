@@ -13,6 +13,7 @@ from qzone_scraper import (
     build_snapshot,
     cookie_header,
     download_snapshot_media,
+    filter_messages,
     normalise_qq,
     save_archive_html,
     save_snapshot,
@@ -90,6 +91,12 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
 def _add_mood_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--page-size", type=int, default=20, help="每页说说条数（默认 20）")
     parser.add_argument("--max-pages", type=int, help="最多抓取多少页说说")
+    parser.add_argument(
+        "--mood-type",
+        choices=("original", "repost", "all"),
+        default="all",
+        help="备份说说类型：original=自己发的，repost=转发的，all=全部（默认）",
+    )
 
 
 def _add_album_options(parser: argparse.ArgumentParser) -> None:
@@ -268,6 +275,18 @@ def interactive_args(input_func=None, output_func=print) -> Optional[argparse.Na
         parsed._output_func = output_func
         return parsed
 
+    if content in ("moods", "all"):
+        mood_choice = _ask_choice(
+            input_func,
+            output_func,
+            "备份哪些说说？1. 自己发的  2. 转发的  3. 全部",
+            ("1", "2", "3"),
+            "3",
+        )
+        arguments.extend(
+            ["--mood-type", {"1": "original", "2": "repost", "3": "all"}[mood_choice]]
+        )
+
     output_func("导出格式：1. JSON + HTML  2. 仅 HTML  3. 仅 JSON")
     format_choice = _ask_choice(input_func, output_func, "请选择导出格式", ("1", "2", "3"), "1")
     format_value = {"1": "all", "2": "html", "3": "json"}[format_choice]
@@ -445,6 +464,11 @@ async def run(args: argparse.Namespace, *, login_func=login_with_cache, api_fact
                     f"  已复用检查点 {count} 条，从 pos={position} 继续"
                 ),
             )
+            all_feed_count = len(feeds)
+            feeds = filter_messages(feeds, args.mood_type)
+            if args.mood_type != "all":
+                mood_label = "自己发的" if args.mood_type == "original" else "转发的"
+                print(f"  说说筛选：{mood_label} {len(feeds)} 条（抓取总数 {all_feed_count} 条）")
         albums = []
         album_error = None
         if include_albums:

@@ -31,6 +31,23 @@ class FakeCliApi:
         return {"status": "ok", "total": 0, "data": []}
 
 
+class FakeFilteredCliApi(FakeCliApi):
+    async def get_messages_list(self, target_qq, g_tk, cookies, pos=0, num=20):
+        self.message_targets.append(target_qq)
+        return {
+            "status": "ok",
+            "total_available": 2,
+            "data": [
+                {"cur_key": "original", "content": "自己发的", "repost": None},
+                {
+                    "cur_key": "repost",
+                    "content": "转发语",
+                    "repost": {"content": "原说说"},
+                },
+            ],
+        }
+
+
 async def fake_login(_path):
     return {"qq": "o999", "bkn": 123, "cookies": {"skey": "fixture"}}
 
@@ -72,6 +89,30 @@ class CliMatrixTests(unittest.TestCase):
         self.assertEqual(api.message_targets, [123])
         self.assertEqual(api.album_targets, [])
         self.assertEqual(saved["target_qq"], "123")
+
+    def test_mood_type_filters_exported_messages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = build_parser().parse_args(
+                [
+                    "self",
+                    "moods",
+                    "--mood-type",
+                    "repost",
+                    "--output-dir",
+                    directory,
+                    "--format",
+                    "json",
+                    "--no-media",
+                    "--delay",
+                    "0",
+                ]
+            )
+            destinations = asyncio.run(
+                run(args, login_func=fake_login, api_factory=FakeFilteredCliApi)
+            )
+            saved = json.loads(destinations[0].read_text(encoding="utf-8"))
+            self.assertEqual(saved["total"], 1)
+            self.assertEqual(saved["data"][0]["cur_key"], "repost")
 
     def test_self_albums_only_calls_album_api(self):
         api, saved = self._run_command(["self", "albums"], "999/albums")
@@ -155,7 +196,7 @@ class InteractiveMenuTests(unittest.TestCase):
     def test_user_moods_wizard_collects_target_and_options(self):
         messages = []
         args = interactive_args(
-            input_func=self._inputs(["2", "123 456", "", "2", "2", "3"]),
+            input_func=self._inputs(["2", "123 456", "", "1", "2", "2", "3"]),
             output_func=messages.append,
         )
         self.assertEqual(args.scope, "user")
@@ -165,6 +206,7 @@ class InteractiveMenuTests(unittest.TestCase):
         self.assertEqual(args.format, "html")
         self.assertTrue(args.no_media)
         self.assertEqual(args.max_pages, 3)
+        self.assertEqual(args.mood_type, "original")
 
     def test_self_albums_wizard_selects_albums_and_exports_html(self):
         args = interactive_args(

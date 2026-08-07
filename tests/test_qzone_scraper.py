@@ -12,6 +12,7 @@ from pathlib import Path
 from qzone_scraper import (
     build_snapshot,
     download_snapshot_media,
+    filter_messages,
     normalise_qq,
     render_archive_html,
     save_archive_html,
@@ -149,6 +150,15 @@ class ScraperTests(unittest.TestCase):
         feeds = asyncio.run(scrape_messages(api, 123, 456, "sid=x", page_size=2, delay=0))
         self.assertEqual([item["cur_key"] for item in feeds], ["a", "b", "c", "d", "e"])
         self.assertEqual(api.positions, [0, 2, 4])
+
+    def test_filter_messages_selects_original_repost_or_all(self):
+        feeds = [
+            {"cur_key": "original", "repost": None},
+            {"cur_key": "repost", "repost": {"content": "原说说"}},
+        ]
+        self.assertEqual([item["cur_key"] for item in filter_messages(feeds, "original")], ["original"])
+        self.assertEqual([item["cur_key"] for item in filter_messages(feeds, "repost")], ["repost"])
+        self.assertEqual(filter_messages(feeds, "all"), feeds)
 
     def test_scrape_resumes_from_last_successful_page_checkpoint(self):
         with tempfile.TemporaryDirectory() as directory:
